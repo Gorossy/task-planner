@@ -1,119 +1,157 @@
 # task-planner
 
-Al empezar una tarea nueva recomienda modelo, effort y subagentes. Aceptas o
-escoges otra cosa una vez, y el mod aplica esa elección en silencio hasta la
-siguiente tarea nueva. No toca permisos ni el modo de permisos: no engancha
-`tool.check` ni `tool.call` (`claude plugin validate .` lista sus hooks).
+Un mod para [Claude Code](https://claude.com/claude-code). Cada vez que empiezas
+una tarea, te dice qué modelo conviene, con cuánto esfuerzo, y si vale la pena
+repartir el trabajo en subagentes. Aceptas con Enter o eliges otra cosa, y sigue
+así hasta la siguiente tarea.
 
-Requiere Claude Code 2.1.287 o posterior.
+## Para qué sirve
+
+Claude Code te deja escoger el modelo (Opus, Sonnet) y el nivel de esfuerzo
+(de `low` a `max`). Casi nadie los cambia: se queda con lo mismo para todo.
+
+- Con el modelo más potente al máximo para leer un archivo, gastas de más y
+  esperas más.
+- Con el más liviano para un cambio delicado, el resultado sale peor.
+
+task-planner mira lo que escribiste y propone una combinación con su motivo.
+Tú decides. Se ve más o menos así:
+
+```text
+Tarea: «arregla el cálculo de retenciones en el módulo de compras»
+Tiene edge cases o cruza varias capas del código existente.
+
+> Opus 5.5 high (recomendado)
+  Opus 5.5 xhigh · $$$$ · más cuidado, más caro
+  Sonnet 5.5 medium · $ · más rápido y barato
+  Más opciones
+```
+
+Algunos ejemplos de lo que recomienda:
+
+| Si la tarea es… | Recomienda |
+| --- | --- |
+| Leer o explorar, sin cambiar nada | Sonnet, esfuerzo `low` |
+| Algo acotado y fácil de verificar | Sonnet, esfuerzo `medium` |
+| Una función nueva de tamaño normal | Opus, esfuerzo `medium` |
+| Un cambio que cruza varias partes del código | Opus, esfuerzo `high` |
+| Seguridad, datos, concurrencia, rendimiento | Opus, esfuerzo `xhigh` |
+| Una tarea larga que corre sola de principio a fin | Opus, esfuerzo `max` |
+
+Solo recomienda: no te quita el control y no promete un ahorro concreto.
 
 ## Instalar
+
+Necesitas Claude Code 2.1.287 o posterior. En la terminal:
 
 ```bash
 claude plugin marketplace add Gorossy/task-planner
 claude plugin install task-planner@gorossy-mods
 ```
 
-Dentro de una sesión son `/plugin marketplace add Gorossy/task-planner` y
-`/plugin install task-planner@gorossy-mods`.
+O dentro de una sesión de Claude Code:
 
-Para probarlo sin instalar, clona el repo y corre
-`claude --plugin-dir ./task-planner`.
+```text
+/plugin marketplace add Gorossy/task-planner
+/plugin install task-planner@gorossy-mods
+```
 
-## Privacidad
+## Cómo se usa
 
-El mod no usa red, ni lee ni escribe archivos, ni lanza procesos. Guarda en el
-store de Claude Code, en tu máquina, un historial de las últimas 300 decisiones
-(tipo de tarea, un resumen corto del prompt, la elección y cómo terminó). Para ambiguos, el
-prompt va a un modelo pequeño de la misma sesión (`CLASSIFIER_MODEL`).
-## Uso
+No hay que hacer nada especial. Escribe como siempre.
 
-- **Tarea nueva** (primer prompt, primero después de `/clear`, o un prompt que
-  describe un trabajo nuevo): se abre el chooser antes de que Claude empiece.
-  Enter acepta la recomendación. Esc deja todo como está.
-- **Continuaciones** ("sí", "dale", "arregla eso", respuestas a una pregunta de
-  Claude, prompts cortos): no pregunta. Ante la duda, tampoco.
-- `/tarea [descripción]`: abre el chooser a mano. Sin descripción usa tu último
-  prompt.
-- `/tareas`: resumen por tipo de tarea — qué se recomendó, cuántas aceptaste,
-  cuántas cambiaste y hacia qué, y cómo terminaron (turnos, interrupciones,
-  errores, minutos, subagentes).
+- **Cuando empiezas algo nuevo** (el primer mensaje, el primero después de
+  `/clear`, o un mensaje que describe otro trabajo), aparece la pregunta antes
+  de que Claude arranque. Enter acepta la recomendación. Esc deja todo como
+  estaba.
+- **Cuando sigues con lo mismo** («sí», «dale», «arregla eso», una respuesta
+  corta), no pregunta. Si tiene dudas, tampoco: prefiere no interrumpir.
+- **`/tarea [descripción]`** abre la pregunta cuando tú quieras.
+- **`/tareas`** te muestra un resumen: qué te recomendó, cuántas veces
+  aceptaste, cuántas cambiaste y cómo terminaron esas tareas.
 
-El chooser es el diálogo del motor, que admite 4 opciones: la recomendación, dos
-alternativas (una más cara; la misma sin subagentes si la recomendación los usa)
-y "Más opciones", que lleva a Personalizar, Dejar como está y la alternativa
-restante. En "Other" también puedes escribir `sonnet high`, `opus xhigh sub
-sonnet` o `dejar`.
+Si no te convence ninguna opción, en «Other» puedes escribir lo que quieras:
+`sonnet high`, `opus xhigh sub sonnet` o `dejar`.
 
-## Plan mode en tareas complejas
+### Tareas grandes: planear antes
 
-Si la tarea nueva es compleja (feature nueva, refactor, migración, cambio de
-arquitectura, bug que cruza capas, varios módulos, o más de un enfoque
-posible) y la sesión no está ya en plan mode, la recomendación lo incluye con
-su motivo. La primera opción pasa a ser "… + plan mode (recomendado)" y la
-segunda la misma configuración "sin plan mode".
+Si la tarea es grande (un refactor, una migración, algo que toca varios módulos
+o que se puede resolver de más de una forma), la recomendación incluye empezar
+en *plan mode*, donde Claude primero propone un plan y espera tu aprobación.
 
-- **Aceptas con plan mode:** el prompt no se envía. Vuelve a la caja tal como lo
-  escribiste con el aviso "Cambia a plan mode con Shift+Tab y envía de nuevo".
-  Al reenviarlo el mod no pregunta y aplica modelo, effort y subagentes.
-- **Eliges una opción sin plan mode:** todo sigue como siempre.
-- Nunca se recomienda en lectura, ediciones mecánicas, cambios de un solo
-  archivo, continuaciones, `/tarea`, ni en modo `automatico` o sin terminal.
-- `/tareas` cuenta por tipo cuántas veces se recomendó, cuántas lo aceptaste
-  (reenviaste en plan mode) y cuántas lo ignoraste.
+Si aceptas, tu mensaje vuelve a la caja de texto con el aviso «Cambia a plan
+mode con Shift+Tab y envía de nuevo». El mod nunca cambia ese modo por ti.
 
-El mod nunca cambia el modo de permisos: solo lo lee, del `permission_mode` que
-el motor reporta en sus eventos (`SessionStart`, `UserPromptSubmit`, `Stop`) y
-del pie del prompt. Los criterios están en `PLAN`, en `hooks/rules.ts`. Lo
-adjunto que no sea texto (imágenes pegadas) no vuelve a la caja.
+## Modos
 
-## Modos (`/config` › task-planner › Modo)
+Se cambia en `/config` › task-planner › Modo.
 
 | Modo | Qué hace |
 | --- | --- |
-| `preguntar` (por defecto) | Chooser en cada tarea nueva. |
-| `automatico` | Nunca pregunta: aplica la recomendación y deja una línea. `/tarea` sigue abriendo el chooser. |
-| `desactivado` | No registra nada: ni hooks ni comandos. |
+| `preguntar` (por defecto) | Pregunta en cada tarea nueva. |
+| `automatico` | No pregunta: aplica la recomendación y te avisa con una línea. |
+| `desactivado` | No hace nada. |
 
-En una sesión no interactiva (`claude -p`, Agent SDK) siempre se comporta como
-`automatico`.
+## Privacidad
 
-## Editar las reglas
+- No se conecta a internet por su cuenta, no lee ni escribe archivos y no
+  ejecuta programas.
+- No toca los permisos de Claude Code.
+- Guarda en tu máquina, dentro de Claude Code, un historial de las últimas 300
+  decisiones: tipo de tarea, un resumen corto de lo que pediste, qué elegiste y
+  cómo terminó. De ahí sale `/tareas`.
+- Cuando no es claro qué tipo de tarea es, le pregunta a un modelo pequeño de
+  tu misma sesión de Claude Code.
 
-Todo está en `hooks/rules.ts`; la lógica no hay que tocarla.
+## En qué se basa
+
+Los criterios de este mod salen de lo que aprendí leyendo el blog de
+[claude.dev](https://claude.dev), que me pareció muy útil. Está hecho con los
+artículos publicados **hasta el 3 de octubre de 2026**; lo que se publique
+después no está reflejado aquí. Los que más pesaron:
+
+- *Using Claude Code: Spending your effort*
+- *What a task costs on Opus 5.5*
+- *Building with Claude Sonnet 5.5*
+- *Getting the most out of Opus 5.5 in Claude and Claude Code*
+- *Getting started with Claude Code mods*
+
+Es un proyecto personal e independiente: no es oficial ni está respaldado por
+Anthropic. Las reglas son mi interpretación de esos artículos.
+
+## Para quien quiera ajustarlo
+
+Todas las reglas están en `hooks/rules.ts`; la lógica no hay que tocarla.
 
 - `TASK_TYPES`: los tipos de tarea en orden de prioridad, cada uno con sus
-  patrones, modelo, effort, motivo y con qué correr los subagentes. Gana el
-  primero que coincide; si ninguno coincide decide un modelo pequeño entre las
-  etiquetas, y si tampoco, queda `DEFAULT_TYPE`.
-- `SUBAGENTS`: cuándo el trabajo es repartible (`when`), cuándo nunca (`never`),
-  cuándo basta Sonnet (`closedSpec`) y la instrucción que recibe Claude.
-- `PLAN`: cuándo recomendar plan mode — tipos que nunca (`neverTypes`), tipos
-  complejos por sí mismos (`types`), señales en el prompt con su motivo
-  (`signals`) y el texto del aviso (`notice`).
+  patrones, modelo, esfuerzo, motivo y con qué correr los subagentes. Gana el
+  primero que coincide; si ninguno coincide decide un modelo pequeño, y si
+  tampoco, queda `DEFAULT_TYPE`.
+- `SUBAGENTS`: cuándo el trabajo se puede repartir y cuándo nunca.
+- `PLAN`: cuándo recomendar plan mode.
 - `CONTINUATION` / `NEW_TASK`: qué cuenta como continuación y qué como tarea
   nueva.
-- `MODELS`, `COST`, `CLASSIFIER_MODEL`: ids de modelo, la escala `$`–`$$$$` y el
-  modelo del clasificador.
+- `MODELS`, `COST`, `CLASSIFIER_MODEL`: los modelos, la escala `$`–`$$$$` y el
+  modelo que clasifica.
 
-Los patrones se prueban contra el prompt en minúsculas y sin tildes. Después de
-editar:
+Los patrones se prueban contra el mensaje en minúsculas y sin tildes. Después
+de editar:
 
 ```bash
 claude plugin test .
 claude plugin validate . --strict
 ```
 
-## Cómo aplica la elección
+Para probar una copia local sin instalarla: `claude --plugin-dir ./task-planner`.
 
-- Modelo y effort del hilo principal: reescribe cada petición del turno
-  (`turn.step`). No cambia `/model` ni `/effort` de la sesión, así que "Dejar
-  como está" es literalmente no hacer nada. El modelo solo cambia en el límite
-  entre tareas, y la línea de confirmación lo avisa porque rompe el cache.
-- Subagentes: el modelo se pone en `agent.spawn` (los forks heredan siempre) y
-  el effort en las peticiones del propio subagente. Pisa el modelo de cualquier
-  tipo de agente mientras la elección incluya subagentes.
-- Las decisiones quedan en el store del mod (últimas 300).
+Cómo aplica la elección:
+
+- Modelo y esfuerzo se ajustan en cada petición de la tarea. No cambia `/model`
+  ni `/effort` de la sesión, así que «Dejar como está» es no hacer nada.
+- El modelo solo cambia entre una tarea y otra, y te avisa cuando lo hace.
+- En los subagentes pone el modelo al crearlos y el esfuerzo en sus peticiones.
+- En una sesión no interactiva (`claude -p`, Agent SDK) se comporta como
+  `automatico`.
 
 ## Licencia
 
