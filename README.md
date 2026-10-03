@@ -14,7 +14,8 @@ Claude Code te deja escoger el modelo (Opus, Sonnet) y el nivel de esfuerzo
   esperas más.
 - Con el más liviano para un cambio delicado, el resultado sale peor.
 
-task-planner mira lo que escribiste y propone una combinación con su motivo.
+task-planner le pasa lo que escribiste a un modelo pequeño y rápido, junto con
+una guía de criterios, y ese modelo razona qué conviene y te explica por qué.
 Tú decides. Se ve más o menos así:
 
 ```text
@@ -27,9 +28,9 @@ Tiene edge cases o cruza varias capas del código existente.
   Más opciones
 ```
 
-Algunos ejemplos de lo que recomienda:
+La guía parte de estos puntos, y el modelo puede apartarse si tu tarea lo pide:
 
-| Si la tarea es… | Recomienda |
+| Si la tarea es… | Punto de partida |
 | --- | --- |
 | Leer o explorar, sin cambiar nada | Sonnet, esfuerzo `low` |
 | Algo acotado y fácil de verificar | Sonnet, esfuerzo `medium` |
@@ -100,8 +101,9 @@ Se cambia en `/config` › task-planner › Modo.
 - Guarda en tu máquina, dentro de Claude Code, un historial de las últimas 300
   decisiones: tipo de tarea, un resumen corto de lo que pediste, qué elegiste y
   cómo terminó. De ahí sale `/tareas`.
-- Cuando no es claro qué tipo de tarea es, le pregunta a un modelo pequeño de
-  tu misma sesión de Claude Code.
+- Para razonar la recomendación, el texto de tu mensaje va a un modelo pequeño
+  (Haiku) por la misma conexión de tu sesión de Claude Code. No va a ningún
+  otro servicio.
 
 ## En qué se basa
 
@@ -121,21 +123,26 @@ Anthropic. Las reglas son mi interpretación de esos artículos.
 
 ## Para quien quiera ajustarlo
 
-Todas las reglas están en `hooks/rules.ts`; la lógica no hay que tocarla.
+La recomendación la razona un modelo con la guía de `hooks/guide.ts`: ese texto
+es el criterio, y editarlo es cambiar cómo decide. La guía se arma con los tipos
+de `hooks/rules.ts`, que viajan como orientación y no como reglas.
 
-- `TASK_TYPES`: los tipos de tarea en orden de prioridad, cada uno con sus
-  patrones, modelo, esfuerzo, motivo y con qué correr los subagentes. Gana el
-  primero que coincide; si ninguno coincide decide un modelo pequeño, y si
-  tampoco, queda `DEFAULT_TYPE`.
-- `SUBAGENTS`: cuándo el trabajo se puede repartir y cuándo nunca.
-- `PLAN`: cuándo recomendar plan mode.
+Si el modelo no responde a tiempo o su respuesta no se entiende, deciden los
+patrones de palabras clave de `hooks/rules.ts`, así que el mod nunca se queda
+sin recomendar. Los mensajes que son claramente una continuación («sí»,
+«dale», algo muy corto) no gastan una llamada.
+
+- `REASONER`: qué modelo razona, con cuánto esfuerzo y cuánto se le espera.
+
+- `TASK_TYPES`: los tipos de tarea, cada uno con su punto de partida (modelo,
+  esfuerzo, motivo, subagentes) y los patrones del respaldo.
+- `SUBAGENTS`, `PLAN`: los patrones del respaldo para subagentes y plan mode.
 - `CONTINUATION` / `NEW_TASK`: qué cuenta como continuación y qué como tarea
   nueva.
 - `MODELS`, `COST`, `CLASSIFIER_MODEL`: los modelos, la escala `$`–`$$$$` y el
   modelo que clasifica.
 
-Los patrones se prueban contra el mensaje en minúsculas y sin tildes. Después
-de editar:
+Después de editar:
 
 ```bash
 claude plugin test .

@@ -16,6 +16,8 @@ type World = {
   model?: string
   answer?: Answerer
   classify?: (labels: readonly string[]) => string | undefined
+  /** What the reasoning model replies; undefined leaves it without an answer. */
+  complete?: (request: { prompt: string; system?: string; model: string }) => string | undefined
   messages?: { role: string; text: string }[]
 }
 
@@ -36,6 +38,7 @@ const world = (on: On, given: World = {}) => {
     steps: [] as { model: string; effort?: string | number; agentId?: string }[],
     spawns: [] as { model?: string; permissionMode?: string }[],
     classified: [] as (readonly string[])[],
+    completed: [] as { prompt: string; system?: string; model: string }[],
     fills: [] as { text: string; mode?: string }[],
     stored: () => [] as Decision[],
   }
@@ -61,6 +64,12 @@ const world = (on: On, given: World = {}) => {
     const { labels } = e as { labels: readonly string[] }
     seen.classified.push(labels)
     return { value: given.classify?.(labels) }
+  })
+  on('model.complete', (_, e) => {
+    const request = e as unknown as { prompt: string; system?: string; model: string }
+    seen.completed.push(request)
+    const text = given.complete?.(request)
+    return { value: (text === undefined ? { isAnswered: false, reason: 'empty-reply' } : { isAnswered: true, text }) as never }
   })
   on('tool.call', { tool: 'AskUserQuestion' }, (_, e) => {
     const questions = e.questions as unknown as Question[]
@@ -617,5 +626,74 @@ describe('plan mode', () => {
     expect(seen.prompts).toHaveLength(1)
     expect(seen.fills).toHaveLength(0)
     expect(seen.stored()[0]!.plan).toBeUndefined()
+  })
+})
+
+describe('el modelo razona la recomendacion', () => {
+  const reply = (fields: Record<string, unknown>) => () =>
+    JSON.stringify({ nueva: true, tipo: 'critica', modelo: 'opus', effort: 'xhigh', subagentes: null, plan_mode: false, motivo_plan: '', motivo: 'toca el calculo de impuestos', ...fields })
+
+  test('la recomendacion y su motivo salen del modelo, no de los patrones', async ($, on) => {
+    // The patterns alone would call this reading: Sonnet low.
+    const seen = world(on, { complete: reply({}) })
+    await start($)
+    await submit($, 'explica como funciona la conciliacion bancaria')
+    expect(seen.completed).toHaveLength(1)
+    expect(seen.completed[0]!.prompt).toContain('explica como funciona la conciliacion bancaria')
+    expect(seen.completed[0]!.system).toContain('lectura')
+    expect(seen.asked[0]![0]!.question).toContain('toca el calculo de impuestos')
+    await step($)
+    expect(seen.steps[0]).toEqual({ model: OPUS, effort: 'xhigh', agentId: undefined })
+    expect(seen.stored()[0]).toMatchObject({ how: 'aceptada', type: 'critica', recommended: { model: 'opus', effort: 'xhigh' } })
+    expect(seen.classified).toHaveLength(0)
+  })
+
+  test('los subagentes que decide el modelo se aplican al crearlos', async ($, on) => {
+    const seen = world(on, { complete: reply({ subagentes: { modelo: 'sonnet', effort: 'medium' } }) })
+    await start($)
+    await submit($, 'revisa el modulo de bancos')
+    await spawn($)
+    expect(seen.spawns[0]).toEqual({ model: SONNET, permissionMode: 'auto' })
+  })
+
+  test('en lo ambiguo el modelo decide si es tarea nueva', async ($, on) => {
+    const seen = world(on, { complete: request => (request.prompt.includes(LONG) ? reply({ nueva: false })() : reply({})()) })
+    await start($)
+    await submit($, 'explica como funciona la conciliacion bancaria')
+    await submit($, LONG)
+    expect(seen.asked).toHaveLength(1)
+    expect(seen.classified).toHaveLength(0)
+  })
+
+  test('una continuacion clara no gasta una llamada', async ($, on) => {
+    const seen = world(on, { complete: reply({}) })
+    await start($)
+    await submit($, 'explica como funciona la conciliacion bancaria')
+    await submit($, 'dale')
+    expect(seen.completed).toHaveLength(1)
+  })
+
+  test('una respuesta que no se entiende cae a los patrones', async ($, on) => {
+    const seen = world(on, { complete: () => 'no se' })
+    await start($)
+    await submit($, 'explica como funciona la conciliacion bancaria')
+    await step($)
+    expect(seen.steps[0]).toEqual({ model: SONNET, effort: 'low', agentId: undefined })
+  })
+
+  test('un modelo o effort que no existe cae a los patrones', async ($, on) => {
+    const seen = world(on, { complete: reply({ modelo: 'gpt', effort: 'ultra' }) })
+    await start($)
+    await submit($, 'explica como funciona la conciliacion bancaria')
+    await step($)
+    expect(seen.steps[0]).toEqual({ model: SONNET, effort: 'low', agentId: undefined })
+  })
+
+  test('plan mode se ofrece cuando el modelo lo pide, con su motivo', async ($, on) => {
+    const seen = world(on, { complete: reply({ plan_mode: true, motivo_plan: 'hay dos formas de resolverlo' }) })
+    await start($, true, 'default')
+    await submit($, 'explica como funciona la conciliacion bancaria')
+    expect(seen.asked[0]![0]!.question).toContain('hay dos formas de resolverlo')
+    expect(seen.asked[0]![0]!.options[0]!.label).toContain('plan mode')
   })
 })

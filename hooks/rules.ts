@@ -35,6 +35,10 @@ export const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'ma
 /** Modelo pequeno para los casos que las heuristicas dejan ambiguos. */
 export const CLASSIFIER_MODEL = 'haiku'
 
+// El modelo que razona la recomendacion (guide.ts). Si no responde a tiempo o
+// su respuesta no se entiende, deciden los patrones de abajo.
+export const REASONER = { model: 'haiku', effort: 'medium' as Effort, maxTokens: 500, timeoutMs: 15000 }
+
 const ACTION =
   /\b(arregla|corrige|implementa|crea|agrega|anade|cambia|escribe|construye|modifica|migra|renombra|refactor\w*|elimina|borra|actualiza|fix|add|build|implement)\b/
 

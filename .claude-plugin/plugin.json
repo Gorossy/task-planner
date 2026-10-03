@@ -1,6 +1,6 @@
 {
   "name": "task-planner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Recomienda modelo, effort y subagentes al empezar una tarea nueva y aplica la eleccion en silencio.",
   "author": {
     "name": "Gorossy"

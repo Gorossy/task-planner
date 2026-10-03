@@ -138,6 +138,50 @@ export const buildPlan = (text: string, type: TaskType): Plan => {
   return { type, summary: summarize(text), rec, reason, unit, planReason: planReason(text, type) }
 }
 
+export type Reasoned = { isNew: boolean; plan: Plan }
+
+const asModel = (value: unknown): Model | undefined =>
+  (Object.keys(MODELS) as Model[]).find(key => key === value)
+
+const asEffort = (value: unknown): Effort | undefined => EFFORTS.find(e => e === value)
+
+/** La respuesta del modelo que razona (guide.ts), o undefined si no se entiende. */
+export const parseReasoned = (reply: string, text: string): Reasoned | undefined => {
+  const from = reply.indexOf('{')
+  const to = reply.lastIndexOf('}')
+  if (from < 0 || to <= from) return undefined
+  let raw: Record<string, unknown>
+  try {
+    raw = JSON.parse(reply.slice(from, to + 1)) as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+  const model = asModel(raw.modelo)
+  const effort = asEffort(raw.effort)
+  const reason = typeof raw.motivo === 'string' ? raw.motivo.trim().replace(/\.$/, '') : ''
+  if (!model || !effort || reason === '') return undefined
+  const rec: Config = { model, effort }
+  const sub = raw.subagentes as Record<string, unknown> | null | undefined
+  const subModel = sub ? asModel(sub.modelo) : undefined
+  if (subModel) {
+    const subEffort = asEffort(sub?.effort)
+    rec.sub = subEffort ? { model: subModel, effort: subEffort } : { model: subModel }
+  }
+  const planReason = typeof raw.motivo_plan === 'string' ? raw.motivo_plan.trim().replace(/\.$/, '') : ''
+  const n = normalize(text)
+  return {
+    isNew: raw.nueva === true,
+    plan: {
+      type: TASK_TYPES.find(t => t.id === raw.tipo) ?? typeByLabel(undefined),
+      summary: summarize(text),
+      rec,
+      reason,
+      unit: rec.sub ? (SUBAGENTS.units.find(u => u.pattern.test(n))?.label ?? '') : '',
+      planReason: raw.plan_mode === true ? planReason || 'la tarea es grande o admite mas de un enfoque' : null,
+    },
+  }
+}
+
 export const describe = (config: Config | null, unit = ''): string => {
   if (config === null) return 'sin cambios'
   const main = [config.model ? MODELS[config.model].label : 'modelo actual', config.effort ?? 'effort actual'].join(' ')

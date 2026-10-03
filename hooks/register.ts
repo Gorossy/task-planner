@@ -19,12 +19,14 @@ import {
   modelFor,
   normalize,
   parseCustom,
+  parseReasoned,
   report,
   summarize,
   typeByLabel,
 } from './planner'
-import type { Decision, How, Plan } from './planner'
-import { CLASSIFIER_MODEL, EFFORTS, MODELS, NEW_TASK, PLAN, SUBAGENTS, TASK_TYPES } from './rules'
+import { GUIDE, reasonPrompt } from './guide'
+import type { Decision, How, Plan, Reasoned } from './planner'
+import { CLASSIFIER_MODEL, EFFORTS, MODELS, NEW_TASK, PLAN, REASONER, SUBAGENTS, TASK_TYPES } from './rules'
 
 type Engine = EngineInterface
 
@@ -140,8 +142,25 @@ const choose = async ($: Engine, plan: Plan, offerPlan: boolean): Promise<Picked
   return extra ? { config: extra.config, how: 'cambiada' } : KEEP_PICK
 }
 
-/** Rules first; the small model only when no rule matched. */
-const planFor = async ($: Engine, text: string): Promise<Plan> => {
+/** The model reads the task against the guide; undefined when it gave nothing usable. */
+const reason = async ($: Engine, text: string, isFirst: boolean): Promise<Reasoned | undefined> => {
+  try {
+    const reply = await $.model.complete({
+      model: REASONER.model,
+      system: GUIDE,
+      prompt: reasonPrompt(text, { isFirst }),
+      effort: REASONER.effort,
+      maxTokens: REASONER.maxTokens,
+      timeoutMs: REASONER.timeoutMs,
+    })
+    return reply.isAnswered ? parseReasoned(reply.text, text) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Where the model gave nothing: the patterns, then the classifier among their labels. */
+const planByRules = async ($: Engine, text: string): Promise<Plan> => {
   const matched = matchType(text)
   if (matched) return buildPlan(text, matched)
   let label: string | undefined
@@ -316,13 +335,19 @@ export const register: Register = (on, options) => {
         return next(e)
       }
       let verdict = detectTask(text, { fresh: state.fresh, answersQuestion: state.fresh ? false : await answersQuestion($) })
+      if (verdict === 'continuation') return next(e)
+      const reasoned = await reason($, text, state.fresh)
       if (verdict === 'ambiguous') {
-        const label = await $.model.classify(text, [NEW_TASK.labels.new, NEW_TASK.labels.continuation], { model: CLASSIFIER_MODEL })
-        verdict = label === NEW_TASK.labels.new ? 'new' : 'continuation'
+        if (reasoned) {
+          verdict = reasoned.isNew ? 'new' : 'continuation'
+        } else {
+          const label = await $.model.classify(text, [NEW_TASK.labels.new, NEW_TASK.labels.continuation], { model: CLASSIFIER_MODEL })
+          verdict = label === NEW_TASK.labels.new ? 'new' : 'continuation'
+        }
       }
       if (verdict !== 'new') return next(e)
 
-      const plan = await planFor($, text)
+      const plan = reasoned?.plan ?? (await planByRules($, text))
       const isAsked = mode === 'preguntar' && kind !== 'sdk' && (await canAsk($, state))
       const offerPlan = isAsked && !inPlanMode(state)
       const picked: Picked = isAsked ? await choose($, plan, offerPlan) : { config: plan.rec, how: 'automatica' }
@@ -410,7 +435,7 @@ export const register: Register = (on, options) => {
       }
     }
     if (text === '') return { text: 'task-planner: escribe la tarea, /tarea <descripcion>.' }
-    const plan = await planFor($, text)
+    const plan = (await reason($, text, state.fresh))?.plan ?? (await planByRules($, text))
     const picked: Picked = (await canAsk($, state)) ? await choose($, plan, false) : { config: plan.rec, how: 'automatica' }
     await settle($, plan, picked, state)
     // With a description, the prompt that follows is this same task.
