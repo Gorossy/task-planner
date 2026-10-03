@@ -1,0 +1,24 @@
+{
+  "name": "task-planner",
+  "version": "0.1.0",
+  "description": "Recomienda modelo, effort y subagentes al empezar una tarea nueva y aplica la eleccion en silencio.",
+  "author": {
+    "name": "Gorossy"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Modo",
+      "description": "preguntar: abre el chooser en cada tarea nueva. automatico: aplica la recomendacion sin preguntar. desactivado: el mod no hace nada.",
+      "default": "preguntar",
+      "options": [
+        "preguntar",
+        "automatico",
+        "desactivado"
+      ]
+    }
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Gorossy/task-planner"
+}

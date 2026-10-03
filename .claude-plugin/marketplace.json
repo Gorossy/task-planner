@@ -1,0 +1,13 @@
+{
+  "name": "gorossy-mods",
+  "owner": { "name": "Gorossy" },
+  "description": "Mods para Claude Code",
+  "plugins": [
+    {
+      "name": "task-planner",
+      "source": "./",
+      "description": "Recomienda modelo, effort y subagentes al empezar una tarea nueva y aplica la eleccion en silencio.",
+      "version": "0.1.0"
+    }
+  ]
+}
